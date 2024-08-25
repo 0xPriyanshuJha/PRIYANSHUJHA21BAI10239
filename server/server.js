@@ -1,89 +1,124 @@
-const WebSocket = require('ws');
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
 
-const server = new WebSocket.Server({ port: 8080 });
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 
 let gameState = {
     grid: [
-        ['A-P1', 'A-P2', 'A-H1', 'A-H2', 'A-P3'],
         ['', '', '', '', ''],
         ['', '', '', '', ''],
         ['', '', '', '', ''],
-        ['B-P1', 'B-P2', 'B-H1', 'B-H2', 'B-P3'],
+        ['', '', '', '', ''],
+        ['', '', '', '', ''],
     ],
     currentPlayer: 'A',
     winner: null
 };
 
-server.on('connection', (ws) => {
-    ws.send(JSON.stringify({ type: 'game_state', gameState }));
+const characterMoves = {
+    'P': { 'L': [-1, 0], 'R': [1, 0], 'F': [0, -1], 'B': [0, 1] },
+    'H1': { 'L': [-2, 0], 'R': [2, 0], 'F': [0, -2], 'B': [0, 2] },
+    'H2': { 'FL': [-2, -2], 'FR': [2, -2], 'BL': [-2, 2], 'BR': [2, 2] }
+};
 
-    ws.on('message', (message) => {
-        const data = JSON.parse(message);
-        
-        if (data.type === 'make_move') {
-            handleMove(data.player, data.direction, data.selected);
-            server.clients.forEach((client) => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify({ type: 'game_state', gameState }));
-                }
-            });
+// Function to initialize the game grid
+function initializeGame(playerASetup, playerBSetup) {
+    gameState.grid[0] = playerASetup.map((char, i) => `A-${char}`);
+    gameState.grid[4] = playerBSetup.map((char, i) => `B-${char}`);
+    gameState.currentPlayer = 'A';
+    gameState.winner = null;
+    io.emit('game_state', gameState);
+}
+
+function getPosition(character) {
+    for (let i = 0; i < 5; i++) {
+        for (let j = 0; j < 5; j++) {
+            if (gameState.grid[i][j] === character) {
+                return [i, j];
+            }
         }
-    });
-});
+    }
+    return null;
+}
 
-function handleMove(player, direction, selected) {
-    const indexMapping = {
-        'A-P1': [0, 0],
-        'A-P2': [0, 1],
-        'A-H1': [0, 2],
-        'A-H2': [0, 3],
-        'A-P3': [0, 4],
-        'B-P1': [4, 0],
-        'B-P2': [4, 1],
-        'B-H1': [4, 2],
-        'B-H2': [4, 3],
-        'B-P3': [4, 4],
-    };
+function isOutOfBounds(row, col) {
+    return row < 0 || row >= 5 || col < 0 || col >= 5;
+}
 
-    let [row, col] = indexMapping[selected];
-    let newRow = row;
-    let newCol = col;
+function makeMove(player, selected, move) {
+    const [row, col] = getPosition(`${player}-${selected}`);
+    if (!row && !col) return false;
 
-    if (player !== gameState.currentPlayer) {
-        return;
+    const moveDelta = characterMoves[selected[0]][move];
+    const newRow = row + moveDelta[1];
+    const newCol = col + moveDelta[0];
+
+    if (isOutOfBounds(newRow, newCol)) return false;
+
+    const targetCell = gameState.grid[newRow][newCol];
+    if (targetCell.startsWith(player)) return false;
+
+    if (selected.startsWith('H1') || selected.startsWith('H2')) {
+        const path = [];
+        for (let i = 1; i <= Math.abs(moveDelta[0]); i++) {
+            path.push([row + (i * Math.sign(moveDelta[1])), col + (i * Math.sign(moveDelta[0]))]);
+        }
+        for (const [pathRow, pathCol] of path) {
+            if (gameState.grid[pathRow][pathCol].startsWith(player === 'A' ? 'B' : 'A')) {
+                gameState.grid[pathRow][pathCol] = '';
+            }
+        }
     }
 
-    switch (direction) {
-        case 'L':
-            newCol = col > 0 ? col - 1 : col;
-            break;
-        case 'R':
-            newCol = col < 4 ? col + 1 : col;
-            break;
-        case 'F':
-            newRow = row > 0 ? row - 1 : row;
-            break;
-        case 'B':
-            newRow = row < 4 ? row + 1 : row;
-            break;
-        default:
-            return;
-    }
+    gameState.grid[newRow][newCol] = `${player}-${selected}`;
+    gameState.grid[row][col] = '';
+    gameState.currentPlayer = player === 'A' ? 'B' : 'A';
 
-    if (gameState.grid[newRow][newCol] === '') {
-        gameState.grid[row][col] = '';
-        gameState.grid[newRow][newCol] = selected;
-        gameState.currentPlayer = gameState.currentPlayer === 'A' ? 'B' : 'A';
+    checkForWinner();
+    return true;
+}
 
-        const aPieces = gameState.grid.flat().filter(item => item.startsWith('A-')).length;
-        const bPieces = gameState.grid.flat().filter(item => item.startsWith('B-')).length;
+function checkForWinner() {
+    const aPieces = gameState.grid.flat().filter(cell => cell.startsWith('A')).length;
+    const bPieces = gameState.grid.flat().filter(cell => cell.startsWith('B')).length;
 
-        if (aPieces === 0) {
-            gameState.winner = 'B';
-        } else if (bPieces === 0) {
-            gameState.winner = 'A';
-        }
+    if (aPieces === 0) {
+        gameState.winner = 'B';
+    } else if (bPieces === 0) {
+        gameState.winner = 'A';
     }
 }
 
-console.log('WebSocket successfully running on localhost:8080 :)');
+io.on('connection', (socket) => {
+    console.log('A user connected');
+    socket.emit('game_state', gameState);
+
+    socket.on('initialize_game', (playerASetup, playerBSetup) => {
+        initializeGame(playerASetup, playerBSetup);
+    });
+
+    socket.on('make_move', (data) => {
+        const { player, selected, move } = data;
+        if (player !== gameState.currentPlayer || gameState.winner) {
+            return;
+        }
+
+        const validMove = makeMove(player, selected, move);
+        if (validMove) {
+            io.emit('game_state', gameState);
+        } else {
+            socket.emit('invalid_move');
+        }
+    });
+
+    socket.on('disconnect', () => {
+        console.log('User disconnected');
+    });
+});
+
+server.listen(3000, () => {
+    console.log('Listening on *:3000');
+});
