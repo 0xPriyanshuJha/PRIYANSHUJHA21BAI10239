@@ -49,9 +49,10 @@ function isOutOfBounds(row, col) {
 }
 
 function makeMove(player, selected, move) {
-    const [row, col] = getPosition(`${player}-${selected}`);
-    if (!row && !col) return false;
+    const position = getPosition(`${player}-${selected}`);
+    if (!position) return false;
 
+    const [row, col] = position;
     const moveDelta = characterMoves[selected[0]][move];
     const newRow = row + moveDelta[1];
     const newCol = col + moveDelta[0];
