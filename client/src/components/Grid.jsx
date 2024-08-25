@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import io from 'socket.io-client';
 
+// here we are using the useState and useEffect hooks to manage the game state and the socket connection.
 const Grid = () => {
   const [gameState, setGameState] = useState({
     grid: [
@@ -14,9 +15,11 @@ const Grid = () => {
     winner: null
   });
 
+//  The selected state is used to keep track of the selected piece. The socket state is used to store the socket connection instance.
   const [selected, setSelected] = useState('A-P1');
   const [socket, setSocket] = useState(null);
 
+  // The useEffect hook is used to establish a connection to the server using the socket.io-client library. It listens for events such as connect, game_state, invalid_move, and disconnect.
   useEffect(() => {
     const socketInstance = io('http://localhost:3000');
 
@@ -44,6 +47,7 @@ const Grid = () => {
     };
   }, []);
 
+//  The handleDirectionClick function is used to send the move to the server. It emits a make_move event with the player, selected piece, and direction as the payload.
   const handleDirectionClick = (direction) => {
     if (socket) {
       socket.emit('make_move', {
@@ -55,7 +59,7 @@ const Grid = () => {
       console.warn('Socket is not connected');
     }
   };
-
+// The Grid component renders the game grid, the selected piece, and the direction buttons. It also displays the current player and the winner if there is one.
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
       <h1 className="text-2xl mb-4">
