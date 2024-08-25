@@ -1,56 +1,58 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from 'react';
+import io from 'socket.io-client';
 
 const Grid = () => {
   const [gameState, setGameState] = useState({
     grid: [
-      ["A-P1", "A-P2", "A-H1", "A-H2", "A-P3"],
-      ["", "", "", "", ""],
-      ["", "", "", "", ""],
-      ["", "", "", "", ""],
-      ["B-P1", "B-P2", "B-H1", "B-H2", "B-P3"],
-    ],
-    currentPlayer: "A",
-    winner: null,
+        ["A-P1", "A-P2", "A-H1", "A-H2", "A-P3"],
+        ["", "", "", "", ""],
+        ["", "", "", "", ""],
+        ["", "", "", "", ""],
+        ["B-P1", "B-P2", "B-H1", "B-H2", "B-P3"],
+      ],
+    currentPlayer: 'A',
+    winner: null
   });
 
-  const [selected, setSelected] = useState("A-P1");
-  const [ws, setWs] = useState(null);
+  const [selected, setSelected] = useState('A-P1');
+  const [socket, setSocket] = useState(null);
 
   useEffect(() => {
-    const websocket = new WebSocket("ws://localhost:8080");
+    const socketInstance = io('http://localhost:3000');
 
-    websocket.onopen = () => {
-      console.log("Connected to WebSocket server");
-    };
+    setSocket(socketInstance);
 
-    websocket.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      if (message.type === "game_state") {
-        setGameState(message.gameState);
-      }
-    };
+    socketInstance.on('connect', () => {
+      console.log('Connected to server');
+    });
 
-    websocket.onclose = () => {
-      console.log("Disconnected from WebSocket server");
-    };
+    socketInstance.on('game_state', (newGameState) => {
+      console.log('Game state updated:', newGameState);
+      setGameState(newGameState);
+    });
 
-    setWs(websocket);
+    socketInstance.on('invalid_move', () => {
+      console.warn('Invalid move attempted');
+    });
+
+    socketInstance.on('disconnect', () => {
+      console.log('Disconnected from server');
+    });
 
     return () => {
-      websocket.close();
+      if (socketInstance) socketInstance.disconnect();
     };
   }, []);
 
   const handleDirectionClick = (direction) => {
-    if (ws) {
-      ws.send(
-        JSON.stringify({
-          type: "make_move",
-          player: gameState.currentPlayer,
-          direction,
-          selected,
-        })
-      );
+    if (socket) {
+      socket.emit('make_move', {
+        player: gameState.currentPlayer,
+        selected,
+        direction
+      });
+    } else {
+      console.warn('Socket is not connected');
     }
   };
 
@@ -64,7 +66,7 @@ const Grid = () => {
           <div
             key={index}
             className={`w-20 h-20 flex items-center justify-center border ${
-              selected === item ? "bg-blue-500" : "bg-gray-800"
+              selected === item ? 'bg-blue-500' : 'bg-gray-800'
             }`}
             onClick={() => setSelected(item)}
           >
